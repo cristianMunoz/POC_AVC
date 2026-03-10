@@ -1,69 +1,95 @@
-# POC AVC - Agregador "Fuente de Verdad" (Versión Base)
+# 🚀 POC AVC - Arquitectura de Streaming con Apache Flink
 
-Esta solución implementa un Agregador de Datos en tiempo real para el proyecto AVC, unificando información de 4 sistemas legados en una "Sábana de Datos" dinámica y precisa.
+## 📋 Descripción del Proyecto
+Esta Prueba de Concepto (POC) demuestra la implementación de una **Vista 360 de Cliente** en tiempo real. Utiliza una arquitectura orientada a eventos donde múltiples fuentes de verdad (Sistemas Legados y Cloud) convergen en un motor de procesamiento distribuido (**Apache Flink**) para consolidar saldos y estados financieros mediante **aritmética de signos**.
 
-## 🧠 Contexto de la Solución
-El objetivo es consolidar la información financiera de un cliente proveniente de fuentes heterogéneas (FlexCube, iSeries, ThoughtMachine y SOAP) en una única Vista 360. La lógica de negocio y el estado financiero del cliente se calculan íntegramente en el Backend para garantizar la integridad de los datos.
 
----
-
-## 🛠️ Stack Tecnológico
-* Java 17 y Spring Boot 3.x
-* Apache Kafka 4.1.1: Bus de eventos para la comunicación asíncrona
-* H2 Database: Base de datos en memoria para persistencia de la "Sábana de Datos"
-* Lombok / Jackson: Gestión de POJOs y serialización JSON.
 
 ---
 
-## ⚙️ Configuración e Instalación
+## 🏗️ Arquitectura Técnica
+La solución se divide en tres capas principales que garantizan el desacoplamiento y la escalabilidad del sistema:
 
-### 1. Requisitos Previos
-* Tener un cluster de Kafka corriendo localmente en el puerto 9092.
+1. **Productores (Spring Boot API):** Actúan como gateways para simular la entrada de datos de 4 sistemas core bancarios:
+   - **FlexCube:** Gestión de Cuentas de Ahorros.
+   - **iSeries:** Core de Préstamos y Cartera.
+   - **Thought Machine:** Core bancario Cloud-Native (Tarjetas).
+   - **SOAP:** Integración con sistemas de Seguros externos.
 
-### 2. Preparación de Kafka
-Antes de subir la app, crea los tópicos necesarios para los sistemas legados ejecutando estos comandos en tu terminal de Kafka:
+2. **Motor de Agregación (Apache Flink):** El componente de procesamiento distribuido. Procesa los flujos de Kafka en ventanas de tiempo de **5 segundos**, consolidando los montos (Cargos/Abonos) de forma asíncrona.
 
-kafka-topics.sh --create --topic tx-flexcube --bootstrap-server localhost:9092
-kafka-topics.sh --create --topic tx-iseries --bootstrap-server localhost:9092
-kafka-topics.sh --create --topic tx-thoughtmachine --bootstrap-server localhost:9092
-kafka-topics.sh --create --topic tx-soap --bootstrap-server localhost:9092
-
-### 3. Ejecución
-Para iniciar el proyecto, usa el siguiente comando de Maven:
-./mvnw spring-boot:run
-
-La aplicación estará disponible en http://localhost:8080.
+3. **Consumidor y Sink (Spring Data + H2):** Recibe los datos agregados por Flink, actualiza la entidad del cliente en la base de datos H2 y expone los resultados mediante una API REST para el canal digital.
 
 ---
 
-## 📐 Reglas de Negocio (Gobernanza de Datos)
-
-1. Precisión Bancaria: Se utiliza BigDecimal en todas las operaciones para evitar errores de coma flotante y la notación científica en los JSON de respuesta.
-2. Cálculo de Balance Neto:
-    * Activos: Los saldos de FlexCube, ThoughtMachine y SOAP se suman al patrimonio global.
-    * Pasivos: Los préstamos de iSeries se restan siempre del saldo global.
-3. Estado de Mora Automático: El Back-end determina el estado. Si la deuda en iSeries es mayor a cero (> 0), el producto se marca automáticamente como "MORA".
-4. Inicialización por Evento: Los productos solo aparecen en el resumen si han recibido al menos un evento. El primer evento define el monto inicial del producto.
-5. Lógica de Billetera: Los eventos de iSeries posteriores a la inicialización se tratan como pagos/abonos que reducen la deuda acumulada.
+## 🛠️ Tecnologías y Requerimientos
+* **Java 17** (LTS)
+* **Spring Boot 3.x**
+* **Apache Flink 1.15+** (Streaming Environment)
+* **Apache Kafka** (Broker local corriendo en puerto 9092)
+* **H2 Database** (Consola habilitada en `/h2-console`)
+* **Lombok & Jackson** (Serialización y reducción de boilerplate)
 
 ---
 
-## 🧪 Guía de Pruebas (curl)
+## 🚀 Guía de Instalación y Ejecución
 
-Sigue este orden para validar la lógica financiera en el endpoint: GET /api/test/resumen/777
+### 1. Preparación de Infraestructura
+Asegúrese de tener **Kafka** activo localmente. Los tópicos requeridos son:
+- `tx-flexcube`, `tx-iseries`, `tx-thoughtmachine`, `tx-soap`.
 
-1. Inicializar Ahorros (FlexCube):
-   curl.exe -X POST "http://localhost:8080/api/test/flexcube?idCliente=777&saldo=5000000"
+### 2. Paso a Paso para la Ejecución
+Para que la POC funcione correctamente, es vital seguir este orden de inicio:
 
-2. Crear Deuda Inicial (iSeries):
-   curl.exe -X POST "http://localhost:8080/api/test/iseries?idCliente=777&monto=3000000"
+1. **Iniciar el Motor Flink:**
+   - Ejecute la clase `com.grupoaval.avc.producer.flink.FlinkStreamingJob`.
+   - Verificará que el motor está activo al ver los bordes cian en la consola.
 
-3. Realizar Abono a Deuda (Sin parámetro de estado):
-   curl.exe -X POST "http://localhost:8080/api/test/iseries?idCliente=777&monto=1000000"
+2. **Iniciar Microservicio Spring Boot:**
+   - Ejecute la clase `PocAvcProducerApplication`.
+   - La API se desplegará en el puerto `8080`.
 
 ---
 
-## 📂 Estructura de Clases Clave
-* KafkaConsumerService: El Agregador que orquesta la entrada de datos y la acumulación de saldos.
-* ClienteService: El motor de cálculo que aplica las reglas de balance y determina la Mora.
-* ClienteEntity: Nuestra "Sábana de Datos" persistida en H2.
+## 🧪 Pruebas de Funcionamiento (Aritmética de Signos)
+
+El sistema utiliza una lógica de signos para unificar el consumo de diversas fuentes sin necesidad de campos adicionales:
+* **Valor POSITIVO (+):** Representa un **Abono** o ingreso (Ahorros / Seguros).
+* **Valor NEGATIVO (-):** Representa un **Cargo** o deuda (Préstamos / Consumos TDC).
+
+
+
+### Batería de Curls para Prueba Integral (ID Cliente: 777)
+
+Ejecute estos comandos en su terminal de PowerShell para validar la integración:
+
+```powershell
+# 1. Depósito Inicial en Ahorros
+curl.exe -X POST "http://localhost:8080/api/test/flexcube?idCliente=777&saldo=5000000"
+
+# 2. Cargo de Préstamo (Deuda)
+curl.exe -X POST "http://localhost:8080/api/test/iseries?idCliente=777&monto=-3000000"
+
+# 3. Consumo con Tarjeta de Crédito
+curl.exe -X POST "http://localhost:8080/api/test/thoughtmachine?idCliente=777&monto=-1200000&tarjetaId=VISA-777"
+
+# 4. Pago de Póliza de Seguro
+curl.exe -X POST "http://localhost:8080/api/test/soap?idCliente=777&monto=800000&poliza=POL-2026"
+```
+### 📊 Consulta de la Vista 360 Consolidada
+Espere el cierre de la ventana de Flink (máximo 5 segundos) y acceda a:
+👉 `GET http://localhost:8080/api/test/resumen/777`
+
+**Resultado Esperado:**
+- **Saldo Total Global:** `$1,600,000` 
+- **Detalle:** Se listarán los 4 productos con sus respectivos estados (Activa, MORA, Vigente) y sus valores individuales agregados.
+
+---
+
+## 🛡️ Características de Diseño
+* **Separación de Responsabilidades:** El cálculo pesado ocurre en Flink; el microservicio solo persiste y sirve datos.
+* **Resiliencia:** Implementación de validaciones en el Service para manejar consultas de clientes aún no registrados sin generar excepciones 500.
+* **Observabilidad:** Salida de consola decorada con colores ANSI (Verde para abonos, Rojo para cargos) para facilitar el monitoreo visual durante las pruebas de integración.
+
+---
+**Desarrollado por:** Cristian Muñoz - Backend Coordinator
