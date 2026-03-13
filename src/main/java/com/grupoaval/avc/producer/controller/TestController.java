@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.grupoaval.avc.producer.dto.ClienteEventDTO;
 import com.grupoaval.avc.producer.dto.ResumenProductosDTO;
 import com.grupoaval.avc.producer.service.ClienteService;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,9 +14,10 @@ import java.math.BigDecimal;
 
 @RestController
 @RequestMapping("/api/test")
+@CrossOrigin(origins = "*") // Habilita peticiones desde cualquier Frontend (React/Angular)
 public class TestController {
 
-    private final KafkaTemplate<String, String> kafkaTemplate; // Cambiado a String
+    private final KafkaTemplate<String, String> kafkaTemplate;
     private final ClienteService clienteService;
     private final ObjectMapper objectMapper;
 
@@ -59,8 +62,17 @@ public class TestController {
         return "Evento SOAP enviado: " + monto;
     }
 
-    @GetMapping("/resumen/{idCliente}")
-    public ResumenProductosDTO obtenerVista360(@PathVariable String idCliente) {
-        return clienteService.generarResumen(idCliente);
+    // Endpoint REST profesionalizado
+    @GetMapping(value = "/resumen/{idCliente}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ResumenProductosDTO> obtenerVista360(@PathVariable String idCliente) {
+        ResumenProductosDTO resumen = clienteService.generarResumen(idCliente);
+
+        // Validación: Si el cliente no existe o no tiene datos consolidados
+        if (resumen == null || resumen.getProductos() == null || resumen.getProductos().isEmpty()) {
+            return ResponseEntity.notFound().build(); // Retorna 404
+        }
+
+        // Retorna 200 OK con el cuerpo JSON
+        return ResponseEntity.ok(resumen);
     }
 }
